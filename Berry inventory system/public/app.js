@@ -1,5 +1,6 @@
-// ===== Berry Berry Foods & Beverages - Inventory Management System =====
-// Water Bottle Supply Company - Sukkur, Pakistan
+// ==========================================
+// Berry Berry PRO - Backend Connected Version
+// ==========================================
 
 // Polyfill for CanvasRenderingContext2D.roundRect if not available
 if (!CanvasRenderingContext2D.prototype.roundRect) {
@@ -13,6 +14,13 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
         return this;
     };
 }
+
+// ===== IMPORTANT: CHANGE THIS TO YOUR VERCEL BACKEND URL =====
+const API_URL = 'https://berry-backend.vercel.app/api';
+// ==============================================================
+
+let authToken = localStorage.getItem('token') || null;
+let currentUser = null;
 
 const app = {
     data: {
@@ -32,77 +40,112 @@ const app = {
         }
     },
 
-    init() {
-        this.loadData();
-        this.loadTheme();
-        this.setupEventListeners();
-        this.setupNavigation();
-        this.renderAll();
-        this.updateDashboard();
-        document.getElementById('saleDate').valueAsDate = new Date();
-        document.getElementById('purchaseDate').valueAsDate = new Date();
-    },
-
-    loadData() {
-        const saved = localStorage.getItem('berryBerryData');
-        if (saved) {
-            this.data = JSON.parse(saved);
-        } else {
-            this.seedData();
+    // ---------- AUTH ----------
+    async login(username, password) {
+        try {
+            const res = await fetch(`${API_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (data.token) {
+                localStorage.setItem('token', data.token);
+                authToken = data.token;
+                currentUser = data.user;
+                document.getElementById('loginOverlay').style.display = 'none';
+                document.getElementById('currentUserName').textContent = data.user.username;
+                document.getElementById('currentUserRole').textContent = data.user.role;
+                this.showToast('Logged in successfully!', 'success');
+                this.loadData();
+                this.renderAll();
+                this.updateDashboard();
+                return true;
+            } else {
+                this.showToast(data.msg || 'Login failed', 'error');
+                return false;
+            }
+        } catch (e) {
+            this.showToast('Server error. Please try again.', 'error');
+            return false;
         }
     },
 
-    saveData() {
-        localStorage.setItem('berryBerryData', JSON.stringify(this.data));
+    logout() {
+        localStorage.removeItem('token');
+        authToken = null;
+        currentUser = null;
+        document.getElementById('loginOverlay').style.display = 'flex';
+        this.showToast('Logged out successfully', 'warning');
     },
 
-    seedData() {
-        this.data.products = [
-            { id: 1, name: 'Hispar Mineral Water', brand: 'Hispar', size: '250ml', category: 'Mineral Water', price: 30, costPrice: 20, stock: 500, minStock: 100, description: 'Premium mineral water 250ml bottle' },
-            { id: 2, name: 'Hispar Mineral Water', brand: 'Hispar', size: '500ml', category: 'Mineral Water', price: 50, costPrice: 35, stock: 800, minStock: 150, description: 'Premium mineral water 500ml bottle' },
-            { id: 3, name: 'Hispar Mineral Water', brand: 'Hispar', size: '1L', category: 'Mineral Water', price: 80, costPrice: 55, stock: 600, minStock: 120, description: 'Premium mineral water 1 litre bottle' },
-            { id: 4, name: 'Hispar Mineral Water', brand: 'Hispar', size: '1.5L', category: 'Mineral Water', price: 110, costPrice: 75, stock: 400, minStock: 80, description: 'Premium mineral water 1.5 litre bottle' },
-            { id: 5, name: 'Hispar Mineral Water', brand: 'Hispar', size: '5L', category: 'Mineral Water', price: 250, costPrice: 180, stock: 200, minStock: 40, description: 'Premium mineral water 5 litre bottle' },
-            { id: 6, name: 'Hispar Dispenser Bottle', brand: 'Hispar', size: '19L', category: 'Dispenser Bottle', price: 400, costPrice: 300, stock: 50, minStock: 15, description: '19 litre dispenser bottle for home/office' },
-            { id: 7, name: 'Berry Berry Drinking Water', brand: 'Berry Berry', size: '500ml', category: 'Drinking Water', price: 35, costPrice: 22, stock: 1000, minStock: 200, description: 'Clean drinking water 500ml' },
-            { id: 8, name: 'Berry Berry Drinking Water', brand: 'Berry Berry', size: '1L', category: 'Drinking Water', price: 60, costPrice: 40, stock: 750, minStock: 150, description: 'Clean drinking water 1 litre' },
-            { id: 9, name: 'Berry Berry Lemon Water', brand: 'Berry Berry', size: '500ml', category: 'Flavored Water', price: 55, costPrice: 35, stock: 300, minStock: 60, description: 'Lemon flavored water 500ml' },
-            { id: 10, name: 'Berry Berry Peach Water', brand: 'Berry Berry', size: '500ml', category: 'Flavored Water', price: 55, costPrice: 35, stock: 250, minStock: 50, description: 'Peach flavored water 500ml' }
-        ];
+    // ---------- API Helpers ----------
+    async fetchAPI(endpoint, options = {}) {
+        const headers = {
+            'Content-Type': 'application/json',
+            'x-auth-token': authToken
+        };
+        try {
+            const res = await fetch(`${API_URL}${endpoint}`, { ...options, headers });
+            if (res.status === 401) {
+                this.showToast('Session expired, please login again', 'error');
+                localStorage.removeItem('token');
+                authToken = null;
+                document.getElementById('loginOverlay').style.display = 'flex';
+                return null;
+            }
+            return await res.json();
+        } catch (e) {
+            this.showToast('Network error. Please check your connection.', 'error');
+            return null;
+        }
+    },
 
-        this.data.customers = [
-            { id: 1, name: 'Ahmed General Store', phone: '0301-2345678', address: 'Main Bazaar, Sukkur', balance: 0, orders: 0 },
-            { id: 2, name: 'Sukkur Medical Store', phone: '0302-3456789', address: 'Hospital Road, Sukkur', balance: 0, orders: 0 },
-            { id: 3, name: 'City Mart', phone: '0303-4567890', address: 'Shalimar Chowk, Sukkur', balance: 0, orders: 0 },
-            { id: 4, name: 'Rahim Traders', phone: '0304-5678901', address: 'New Market, Sukkur', balance: 0, orders: 0 },
-            { id: 5, name: 'Sukkur Public School', phone: '0305-6789012', address: 'Defence Road, Sukkur', balance: 0, orders: 0 }
-        ];
+    // ---------- Load Data from Server ----------
+    async loadData() {
+        if (!authToken) {
+            document.getElementById('loginOverlay').style.display = 'flex';
+            return;
+        }
+        try {
+            const [products, customers, sales, stats] = await Promise.all([
+                this.fetchAPI('/products'),
+                this.fetchAPI('/customers'),
+                this.fetchAPI('/sales'),
+                this.fetchAPI('/stats')
+            ]);
+            if (products) this.data.products = products;
+            if (customers) this.data.customers = customers;
+            if (sales) this.data.sales = sales;
+            if (stats) {
+                document.getElementById('totalProducts').textContent = stats.totalProducts || 0;
+                document.getElementById('totalStock').textContent = (stats.totalStock || 0).toLocaleString();
+                document.getElementById('lowStockCount').textContent = stats.lowStock || 0;
+                document.getElementById('todaySales').textContent = 'Rs. ' + (stats.todaySales || 0).toLocaleString();
+            }
+            this.renderAll();
+            this.updateDashboard();
+        } catch (e) {
+            this.showToast('Error loading data', 'error');
+        }
+    },
 
-        this.data.suppliers = [
-            { id: 1, companyName: 'Hispar Water Company', contactPerson: 'Mr. Ali Khan', phone: '0321-1112223', email: 'ali@hispar.pk', address: 'Karachi, Sindh', status: 'active' },
-            { id: 2, companyName: 'Pakistan Bottling Co.', contactPerson: 'Mr. Imran', phone: '0322-2223334', email: 'imran@pbc.pk', address: 'Lahore, Punjab', status: 'active' },
-            { id: 3, companyName: 'Sindh Mineral Water', contactPerson: 'Mr. Farooq', phone: '0323-3334445', email: 'farooq@smw.pk', address: 'Hyderabad, Sindh', status: 'active' }
-        ];
-
-        this.data.sales = [
-            { id: 'INV-001', date: new Date().toISOString().split('T')[0], customerId: 1, items: [{productId: 2, qty: 50, price: 50, total: 2500}], subtotal: 2500, discount: 0, grandTotal: 2500, paymentMethod: 'Cash', amountPaid: 2500, balance: 0, status: 'paid' },
-            { id: 'INV-002', date: new Date().toISOString().split('T')[0], customerId: 2, items: [{productId: 3, qty: 30, price: 80, total: 2400}, {productId: 7, qty: 40, price: 35, total: 1400}], subtotal: 3800, discount: 100, grandTotal: 3700, paymentMethod: 'Credit', amountPaid: 0, balance: 3700, status: 'credit' },
-            { id: 'INV-003', date: new Date().toISOString().split('T')[0], customerId: 3, items: [{productId: 5, qty: 20, price: 250, total: 5000}], subtotal: 5000, discount: 0, grandTotal: 5000, paymentMethod: 'JazzCash', amountPaid: 5000, balance: 0, status: 'paid' }
-        ];
-
-        this.data.purchases = [
-            { id: 'PO-001', date: new Date().toISOString().split('T')[0], supplierId: 1, productId: 2, quantity: 500, unitCost: 35, totalCost: 17500, notes: 'Regular stock', status: 'completed' },
-            { id: 'PO-002', date: new Date().toISOString().split('T')[0], supplierId: 1, productId: 3, quantity: 300, unitCost: 55, totalCost: 16500, notes: 'Regular stock', status: 'completed' }
-        ];
-
-        this.data.activities = [
-            { type: 'sale', message: 'New sale to Ahmed General Store - Rs. 2,500', time: '2 hours ago' },
-            { type: 'stock', message: 'Stock updated for Hispar 500ml - +500 bottles', time: '5 hours ago' },
-            { type: 'purchase', message: 'Purchase from Hispar Water Company - Rs. 17,500', time: '1 day ago' },
-            { type: 'alert', message: 'Berry Berry Peach Water is running low (250 left)', time: '1 day ago' }
-        ];
-
-        this.saveData();
+    // ---------- INIT Override ----------
+    init() {
+        this.loadTheme();
+        this.setupEventListeners();
+        this.setupNavigation();
+        
+        // Check if user is already logged in
+        if (authToken) {
+            document.getElementById('loginOverlay').style.display = 'none';
+            this.loadData();
+        } else {
+            document.getElementById('loginOverlay').style.display = 'flex';
+        }
+        
+        document.getElementById('saleDate').valueAsDate = new Date();
+        document.getElementById('purchaseDate').valueAsDate = new Date();
     },
 
     setupNavigation() {
@@ -148,6 +191,20 @@ const app = {
             }
         });
 
+        // Enter key on login
+        document.getElementById('loginPass').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const username = document.getElementById('loginUser').value;
+                const password = document.getElementById('loginPass').value;
+                this.login(username, password);
+            }
+        });
+        document.getElementById('loginUser').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('loginPass').focus();
+            }
+        });
+
         document.getElementById('addProductForm').addEventListener('submit', (e) => this.handleAddProduct(e));
         document.getElementById('addStockForm').addEventListener('submit', (e) => this.handleAddStock(e));
         document.getElementById('addSaleForm').addEventListener('submit', (e) => this.handleAddSale(e));
@@ -186,8 +243,8 @@ const app = {
     },
 
     populateSelects() {
-        const productOptions = this.data.products.map(p => '<option value="' + p.id + '">' + p.name + ' - ' + p.size + '</option>').join('');
-        const customerOptions = this.data.customers.map(c => '<option value="' + c.id + '">' + c.name + '</option>').join('');
+        const productOptions = this.data.products.map(p => '<option value="' + p._id + '">' + p.name + ' - ' + p.size + '</option>').join('');
+        const customerOptions = this.data.customers.map(c => '<option value="' + c._id + '">' + c.name + '</option>').join('');
         const supplierOptions = this.data.suppliers.map(s => '<option value="' + s.id + '">' + s.companyName + '</option>').join('');
 
         const stockSelect = document.getElementById('stockProductSelect');
@@ -311,7 +368,8 @@ const app = {
             if (p.stock === 0) { status = 'out-stock'; statusText = 'Out of Stock'; }
             else if (p.stock <= p.minStock) { status = 'low-stock'; statusText = 'Low Stock'; }
 
-            return '<tr><td>#' + p.id + '</td><td><strong>' + p.name + '</strong></td><td>' + p.size + '</td><td>' + p.category + '</td><td>' + p.stock + '</td><td>' + p.minStock + '</td><td>Rs. ' + p.price + '</td><td><span class="status-badge ' + status + '">' + statusText + '</span></td><td><button class="btn btn-icon" onclick="app.editProduct(' + p.id + ')" title="Edit"><i class="fas fa-pen"></i></button><button class="btn btn-icon btn-danger" onclick="app.deleteProduct(' + p.id + ')" title="Delete"><i class="fas fa-trash"></i></button></td></tr>';
+            const expiryDate = p.expiryDate ? new Date(p.expiryDate).toLocaleDateString() : 'N/A';
+            return '<tr><td>#' + p.id + '</td><td><strong>' + p.name + '</strong></td><td>' + p.size + '</td><td>' + p.category + '</td><td>' + p.stock + '</td><td>' + p.minStock + '</td><td>Rs. ' + p.price + '</td><td>' + expiryDate + '</td><td><span class="status-badge ' + status + '">' + statusText + '</span></td><td><button class="btn btn-icon" onclick="app.editProduct(' + p.id + ')" title="Edit"><i class="fas fa-pen"></i></button><button class="btn btn-icon btn-danger" onclick="app.deleteProduct(\'' + p._id + '\')" title="Delete"><i class="fas fa-trash"></i></button></td></tr>';
         }).join('');
     },
 
@@ -323,14 +381,14 @@ const app = {
             if (p.stock === 0) { badgeClass = 'danger'; badgeText = 'Out of Stock'; }
             else if (p.stock <= p.minStock) { badgeClass = 'warning'; badgeText = 'Low Stock'; }
 
-            return '<div class="product-card"><div class="product-image"><i class="fas fa-bottle-water"></i><span class="product-badge status-badge ' + (badgeClass === 'success' ? 'in-stock' : badgeClass === 'warning' ? 'low-stock' : 'out-stock') + '">' + badgeText + '</span></div><div class="product-info"><h4>' + p.name + '</h4><p class="brand">' + p.brand + ' | ' + p.category + '</p><p style="font-size:12px;color:var(--text-light)">' + p.size + ' | ' + p.description + '</p><div class="product-meta"><span class="price">Rs. ' + p.price + '</span><span class="stock">' + p.stock + ' in stock</span></div></div><div class="product-actions"><button onclick="app.editProduct(' + p.id + ')"><i class="fas fa-pen"></i> Edit</button><button onclick="app.deleteProduct(' + p.id + ')"><i class="fas fa-trash"></i> Delete</button></div></div>';
+            return '<div class="product-card"><div class="product-image"><i class="fas fa-bottle-water"></i><span class="product-badge status-badge ' + (badgeClass === 'success' ? 'in-stock' : badgeClass === 'warning' ? 'low-stock' : 'out-stock') + '">' + badgeText + '</span></div><div class="product-info"><h4>' + p.name + '</h4><p class="brand">' + p.brand + ' | ' + p.category + '</p><p style="font-size:12px;color:var(--text-light)">' + p.size + ' | ' + p.description + '</p><div class="product-meta"><span class="price">Rs. ' + p.price + '</span><span class="stock">' + p.stock + ' in stock</span></div></div><div class="product-actions"><button onclick="app.editProduct(' + p.id + ')"><i class="fas fa-pen"></i> Edit</button><button onclick="app.deleteProduct(\'' + p._id + '\')"><i class="fas fa-trash"></i> Delete</button></div></div>';
         }).join('');
     },
 
     renderSales() {
         const tbody = document.getElementById('salesTable');
         tbody.innerHTML = this.data.sales.map(s => {
-            const customer = this.data.customers.find(c => c.id === s.customerId);
+            const customer = this.data.customers.find(c => c._id === s.customerId);
             const customerName = customer ? customer.name : 'Unknown';
             const statusClass = s.status === 'paid' ? 'paid' : s.status === 'credit' ? 'credit' : 'pending';
             return `<tr><td><strong>${s.id}</strong></td><td>${s.date}</td><td>${customerName}</td><td>${s.items.length} item(s)</td><td>Rs. ${s.grandTotal.toLocaleString()}</td><td>${s.paymentMethod}</td><td><span class="status-badge ${statusClass}">${s.status.toUpperCase()}</span></td><td><button class="btn btn-icon" onclick="app.viewSale('${s.id}')" title="View"><i class="fas fa-eye"></i></button><button class="btn btn-icon" onclick="app.printInvoice('${s.id}')" title="Print"><i class="fas fa-print"></i></button></td></tr>`;
@@ -349,7 +407,9 @@ const app = {
     renderCustomers() {
         const tbody = document.getElementById('customersTable');
         tbody.innerHTML = this.data.customers.map(c => {
-            return '<tr><td>#' + c.id + '</td><td><strong>' + c.name + '</strong></td><td>' + c.phone + '</td><td>' + c.address + '</td><td>' + c.orders + '</td><td>Rs. ' + c.balance.toLocaleString() + '</td><td><button class="btn btn-icon" onclick="app.editCustomer(' + c.id + ')" title="Edit"><i class="fas fa-pen"></i></button><button class="btn btn-icon btn-danger" onclick="app.deleteCustomer(' + c.id + ')" title="Delete"><i class="fas fa-trash"></i></button></td></tr>';
+            const status = c.balance > c.creditLimit ? 'over-limit' : 'good';
+            const statusText = c.balance > c.creditLimit ? '⚠️ Over Limit' : '✅ Good';
+            return '<tr><td><strong>' + c.name + '</strong></td><td>' + c.phone + '</td><td>' + c.orders + '</td><td>Rs. ' + c.balance.toLocaleString() + '</td><td>Rs. ' + c.creditLimit + '</td><td><span class="customer-status ' + status + '">' + statusText + '</span></td><td><button class="btn btn-icon" onclick="app.editCustomer(' + c.id + ')" title="Edit"><i class="fas fa-pen"></i></button><button class="btn btn-icon btn-danger" onclick="app.deleteCustomer(\'' + c._id + '\')" title="Delete"><i class="fas fa-trash"></i></button></td></tr>';
         }).join('');
     },
 
@@ -370,11 +430,11 @@ const app = {
         this.renderSuppliers();
     },
 
-    handleAddProduct(e) {
+    // ---------- CRUD Operations (Backend Connected) ----------
+    async handleAddProduct(e) {
         e.preventDefault();
         const form = e.target;
         const newProduct = {
-            id: Date.now(),
             name: form.name.value,
             brand: form.brand.value || 'Berry Berry',
             size: form.size.value,
@@ -383,28 +443,37 @@ const app = {
             costPrice: parseFloat(form.costPrice.value) || 0,
             stock: parseInt(form.stock.value),
             minStock: parseInt(form.minStock.value),
+            expiryDate: form.expiryDate.value || null,
             description: form.description.value
         };
-        this.data.products.push(newProduct);
-        this.addActivity('stock', 'New product added: ' + newProduct.name + ' (' + newProduct.size + ')');
-        this.saveData();
-        this.renderAll();
-        this.updateDashboard();
-        this.closeModal('addProductModal');
-        form.reset();
-        this.showToast('Product added successfully!', 'success');
+        const result = await this.fetchAPI('/products', {
+            method: 'POST',
+            body: JSON.stringify(newProduct)
+        });
+        if (result) {
+            this.data.products.push(result);
+            this.renderAll();
+            this.updateDashboard();
+            this.closeModal('addProductModal');
+            form.reset();
+            this.showToast('Product added successfully!', 'success');
+        }
     },
 
-    handleAddStock(e) {
+    async handleAddStock(e) {
         e.preventDefault();
         const form = e.target;
-        const productId = parseInt(form.productId.value);
+        const productId = form.productId.value;
         const qty = parseInt(form.quantity.value);
-        const product = this.data.products.find(p => p.id === productId);
+        const product = this.data.products.find(p => p._id === productId);
         if (product) {
             product.stock += qty;
+            // Update in backend
+            await this.fetchAPI('/products/' + productId, {
+                method: 'PUT',
+                body: JSON.stringify(product)
+            });
             this.addActivity('stock', 'Stock added: ' + product.name + ' +' + qty + ' bottles');
-            this.saveData();
             this.renderAll();
             this.updateDashboard();
             this.closeModal('addStockModal');
@@ -413,23 +482,20 @@ const app = {
         }
     },
 
-    handleAddSale(e) {
+    async handleAddSale(e) {
         e.preventDefault();
         const form = e.target;
         const items = [];
         let subtotal = 0;
 
         document.querySelectorAll('.sale-item-row').forEach(row => {
-            const productId = parseInt(row.querySelector('.sale-product').value);
+            const productId = row.querySelector('.sale-product').value;
             const qty = parseInt(row.querySelector('.sale-qty').value);
             const price = parseFloat(row.querySelector('.sale-price').value);
             if (productId && qty && price) {
                 const total = qty * price;
                 items.push({ productId, qty, price, total });
                 subtotal += total;
-
-                const product = this.data.products.find(p => p.id === productId);
-                if (product) product.stock -= qty;
             }
         });
 
@@ -438,10 +504,10 @@ const app = {
         const amountPaid = parseFloat(document.getElementById('saleAmountPaid').value) || 0;
         const balance = grandTotal - amountPaid;
 
-        const sale = {
+        const saleData = {
             id: 'INV-' + String(this.data.sales.length + 1).padStart(3, '0'),
             date: form.date.value,
-            customerId: parseInt(form.customerId.value),
+            customerId: form.customerId.value,
             items,
             subtotal,
             discount,
@@ -452,42 +518,63 @@ const app = {
             status: balance > 0 ? 'credit' : 'paid'
         };
 
-        const customer = this.data.customers.find(c => c.id === sale.customerId);
-        if (customer) {
-            customer.balance += balance;
-            customer.orders += 1;
-        }
+        const result = await this.fetchAPI('/sales', {
+            method: 'POST',
+            body: JSON.stringify(saleData)
+        });
 
-        this.data.sales.push(sale);
-        this.addActivity('sale', 'New sale: ' + (customer ? customer.name : 'Unknown') + ' - Rs. ' + grandTotal.toLocaleString());
-        this.saveData();
-        this.renderAll();
-        this.updateDashboard();
-        this.closeModal('addSaleModal');
-        form.reset();
-        this.resetSaleItems();
-        this.showToast('Sale completed successfully!', 'success');
+        if (result) {
+            const customer = this.data.customers.find(c => c._id === saleData.customerId);
+            if (customer) {
+                customer.balance += balance;
+                customer.orders += 1;
+            }
+            // Update local stock
+            items.forEach(item => {
+                const p = this.data.products.find(pr => pr._id === item.productId);
+                if (p) p.stock -= item.qty;
+            });
+            this.data.sales.push(result);
+            this.addActivity('sale', 'New sale: ' + (customer ? customer.name : 'Unknown') + ' - Rs. ' + grandTotal.toLocaleString());
+            this.renderAll();
+            this.updateDashboard();
+            this.closeModal('addSaleModal');
+            form.reset();
+            this.resetSaleItems();
+            this.showToast('Sale completed successfully!', 'success');
+            
+            // WhatsApp integration
+            if (customer && customer.phone) {
+                const msg = `Dear ${customer.name}, your invoice ${saleData.id} for Rs. ${grandTotal} is ready. Balance: Rs. ${balance}. Thank you!`;
+                const url = `https://wa.me/${customer.phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`;
+                window.open(url, '_blank');
+            }
+        }
     },
 
-    handleAddPurchase(e) {
+    async handleAddPurchase(e) {
         e.preventDefault();
         const form = e.target;
-        const productId = parseInt(form.productId.value);
+        const productId = form.productId.value;
         const qty = parseInt(form.quantity.value);
         const unitCost = parseFloat(form.unitCost.value);
         const totalCost = qty * unitCost;
 
-        const product = this.data.products.find(p => p.id === productId);
+        const product = this.data.products.find(p => p._id === productId);
         if (product) {
             product.stock += qty;
             product.costPrice = unitCost;
+            await this.fetchAPI('/products/' + productId, {
+                method: 'PUT',
+                body: JSON.stringify(product)
+            });
         }
 
         const purchase = {
             id: 'PO-' + String(this.data.purchases.length + 1).padStart(3, '0'),
             date: form.date.value,
             supplierId: parseInt(form.supplierId.value),
-            productId,
+            productId: productId,
             quantity: qty,
             unitCost,
             totalCost,
@@ -497,7 +584,6 @@ const app = {
 
         this.data.purchases.push(purchase);
         this.addActivity('purchase', 'Purchase: ' + qty + ' bottles from supplier - Rs. ' + totalCost.toLocaleString());
-        this.saveData();
         this.renderAll();
         this.updateDashboard();
         this.closeModal('addPurchaseModal');
@@ -505,23 +591,28 @@ const app = {
         this.showToast('Purchase recorded successfully!', 'success');
     },
 
-    handleAddCustomer(e) {
+    async handleAddCustomer(e) {
         e.preventDefault();
         const form = e.target;
         const customer = {
-            id: Date.now(),
             name: form.name.value,
             phone: form.phone.value,
             address: form.address.value,
             balance: parseFloat(form.balance.value) || 0,
+            creditLimit: parseFloat(form.creditLimit.value) || 5000,
             orders: 0
         };
-        this.data.customers.push(customer);
-        this.saveData();
-        this.renderCustomers();
-        this.closeModal('addCustomerModal');
-        form.reset();
-        this.showToast('Customer added successfully!', 'success');
+        const result = await this.fetchAPI('/customers', {
+            method: 'POST',
+            body: JSON.stringify(customer)
+        });
+        if (result) {
+            this.data.customers.push(result);
+            this.renderCustomers();
+            this.closeModal('addCustomerModal');
+            form.reset();
+            this.showToast('Customer added successfully!', 'success');
+        }
     },
 
     handleAddSupplier(e) {
@@ -562,9 +653,10 @@ const app = {
         this.showToast('Notification settings saved!', 'success');
     },
 
+    // ---------- UI Helpers ----------
     addSaleItem() {
         const container = document.getElementById('saleItems');
-        const productOptions = this.data.products.map(p => '<option value="' + p.id + '">' + p.name + ' - ' + p.size + '</option>').join('');
+        const productOptions = this.data.products.map(p => '<option value="' + p._id + '">' + p.name + ' - ' + p.size + '</option>').join('');
         const row = document.createElement('div');
         row.className = 'sale-item-row';
         row.innerHTML = '<div class="form-group"><label>Product</label><select class="sale-product" required onchange="app.updateSalePrice(this)"><option value="">Select Product</option>' + productOptions + '</select></div><div class="form-group"><label>Qty</label><input type="number" class="sale-qty" min="1" value="1" required onchange="app.calculateSaleTotal()"></div><div class="form-group"><label>Unit Price (Rs)</label><input type="number" class="sale-price" readonly></div><div class="form-group"><label>Total (Rs)</label><input type="number" class="sale-total" readonly></div><button type="button" class="btn btn-icon btn-danger" onclick="app.removeSaleItem(this)"><i class="fas fa-trash"></i></button>';
@@ -587,8 +679,8 @@ const app = {
     },
 
     updateSalePrice(select) {
-        const productId = parseInt(select.value);
-        const product = this.data.products.find(p => p.id === productId);
+        const productId = select.value;
+        const product = this.data.products.find(p => p._id === productId);
         const row = select.closest('.sale-item-row');
         if (product) {
             row.querySelector('.sale-price').value = product.price;
@@ -624,22 +716,26 @@ const app = {
         document.getElementById('purchaseTotalCost').value = qty * cost;
     },
 
-    deleteProduct(id) {
+    async deleteProduct(id) {
         if (confirm('Are you sure you want to delete this product?')) {
-            this.data.products = this.data.products.filter(p => p.id !== id);
-            this.saveData();
-            this.renderAll();
-            this.updateDashboard();
-            this.showToast('Product deleted', 'success');
+            const result = await this.fetchAPI('/products/' + id, { method: 'DELETE' });
+            if (result) {
+                this.data.products = this.data.products.filter(p => p._id !== id);
+                this.renderAll();
+                this.updateDashboard();
+                this.showToast('Product deleted', 'success');
+            }
         }
     },
 
-    deleteCustomer(id) {
+    async deleteCustomer(id) {
         if (confirm('Are you sure you want to delete this customer?')) {
-            this.data.customers = this.data.customers.filter(c => c.id !== id);
-            this.saveData();
-            this.renderCustomers();
-            this.showToast('Customer deleted', 'success');
+            const result = await this.fetchAPI('/customers/' + id, { method: 'DELETE' });
+            if (result) {
+                this.data.customers = this.data.customers.filter(c => c._id !== id);
+                this.renderCustomers();
+                this.showToast('Customer deleted', 'success');
+            }
         }
     },
 
@@ -667,9 +763,9 @@ const app = {
     viewSale(id) {
         const sale = this.data.sales.find(s => s.id === id);
         if (sale) {
-            const customer = this.data.customers.find(c => c.id === sale.customerId);
+            const customer = this.data.customers.find(c => c._id === sale.customerId);
             let itemsHtml = sale.items.map(item => {
-                const product = this.data.products.find(p => p.id === item.productId);
+                const product = this.data.products.find(p => p._id === item.productId);
                 return (product ? product.name : 'Unknown') + ' x ' + item.qty + ' = Rs. ' + item.total;
             }).join('\n');
             alert('Invoice: ' + sale.id + '\nCustomer: ' + (customer ? customer.name : 'Unknown') + '\nDate: ' + sale.date + '\n\nItems:\n' + itemsHtml + '\n\nSubtotal: Rs. ' + sale.subtotal + '\nDiscount: Rs. ' + sale.discount + '\nGrand Total: Rs. ' + sale.grandTotal + '\nPayment: ' + sale.paymentMethod + '\nStatus: ' + sale.status);
@@ -680,7 +776,7 @@ const app = {
         const purchase = this.data.purchases.find(p => p.id === id);
         if (purchase) {
             const supplier = this.data.suppliers.find(s => s.id === purchase.supplierId);
-            const product = this.data.products.find(p => p.id === purchase.productId);
+            const product = this.data.products.find(p => p._id === purchase.productId);
             alert('PO: ' + purchase.id + '\nSupplier: ' + (supplier ? supplier.companyName : 'Unknown') + '\nProduct: ' + (product ? product.name : 'Unknown') + '\nQty: ' + purchase.quantity + '\nTotal: Rs. ' + purchase.totalCost + '\nStatus: ' + purchase.status);
         }
     },
@@ -704,7 +800,7 @@ const app = {
             title.textContent = 'Sales Report';
             const totalSales = this.data.sales.reduce((sum, s) => sum + s.grandTotal, 0);
             const totalCredit = this.data.sales.reduce((sum, s) => sum + s.balance, 0);
-            content.innerHTML = '<div style="padding:20px"><div class="stats-grid" style="margin-bottom:20px"><div class="stat-card blue"><div class="stat-info"><h3>' + this.data.sales.length + '</h3><p>Total Invoices</p></div></div><div class="stat-card green"><div class="stat-info"><h3>Rs. ' + totalSales.toLocaleString() + '</h3><p>Total Sales</p></div></div><div class="stat-card orange"><div class="stat-info"><h3>Rs. ' + totalCredit.toLocaleString() + '</h3><p>Total Credit</p></div></div></div><table class="data-table"><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Total</th><th>Paid</th><th>Balance</th></tr></thead><tbody>' + this.data.sales.map(s => { const c = this.data.customers.find(cust => cust.id === s.customerId); return '<tr><td>' + s.id + '</td><td>' + s.date + '</td><td>' + (c ? c.name : 'Unknown') + '</td><td>Rs. ' + s.grandTotal.toLocaleString() + '</td><td>Rs. ' + s.amountPaid.toLocaleString() + '</td><td>Rs. ' + s.balance.toLocaleString() + '</td></tr>'; }).join('') + '</tbody></table></div>';
+            content.innerHTML = '<div style="padding:20px"><div class="stats-grid" style="margin-bottom:20px"><div class="stat-card blue"><div class="stat-info"><h3>' + this.data.sales.length + '</h3><p>Total Invoices</p></div></div><div class="stat-card green"><div class="stat-info"><h3>Rs. ' + totalSales.toLocaleString() + '</h3><p>Total Sales</p></div></div><div class="stat-card orange"><div class="stat-info"><h3>Rs. ' + totalCredit.toLocaleString() + '</h3><p>Total Credit</p></div></div></div><table class="data-table"><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Total</th><th>Paid</th><th>Balance</th></tr></thead><tbody>' + this.data.sales.map(s => { const c = this.data.customers.find(cust => cust._id === s.customerId); return '<tr><td>' + s.id + '</td><td>' + s.date + '</td><td>' + (c ? c.name : 'Unknown') + '</td><td>Rs. ' + s.grandTotal.toLocaleString() + '</td><td>Rs. ' + s.amountPaid.toLocaleString() + '</td><td>Rs. ' + s.balance.toLocaleString() + '</td></tr>'; }).join('') + '</tbody></table></div>';
         } else if (type === 'profit') {
             title.textContent = 'Profit & Loss Report';
             const totalRevenue = this.data.sales.reduce((sum, s) => sum + s.grandTotal, 0);
@@ -819,7 +915,7 @@ const app = {
             return true;
         });
         tbody.innerHTML = filtered.map(s => {
-            const customer = this.data.customers.find(c => c.id === s.customerId);
+            const customer = this.data.customers.find(c => c._id === s.customerId);
             const statusClass = s.status === 'paid' ? 'paid' : s.status === 'credit' ? 'credit' : 'pending';
             return `<tr><td><strong>${s.id}</strong></td><td>${s.date}</td><td>${customer ? customer.name : 'Unknown'}</td><td>${s.items.length} item(s)</td><td>Rs. ${s.grandTotal.toLocaleString()}</td><td>${s.paymentMethod}</td><td><span class="status-badge ${statusClass}">${s.status.toUpperCase()}</span></td><td><button class="btn btn-icon" onclick="app.viewSale('${s.id}')" title="View"><i class="fas fa-eye"></i></button></td></tr>`;
         }).join('');
@@ -856,7 +952,7 @@ const app = {
         });
 
         this.data.sales.slice(0, 3).forEach(s => {
-            const customer = this.data.customers.find(c => c.id === s.customerId);
+            const customer = this.data.customers.find(c => c._id === s.customerId);
             notifs.push({
                 type: 'sale',
                 icon: 'fa-cart-shopping',
